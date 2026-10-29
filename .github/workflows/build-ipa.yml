@@ -42,6 +42,8 @@ jobs:
             No paywall, no RevenueCat.
           prerelease: true
           draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Upload unsigned IPA artifact
         uses: actions/upload-artifact@v4
