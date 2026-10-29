@@ -21,7 +21,8 @@ class Scraper {
     final url = Uri.parse('https://www.tiktok.com/@$username');
     final resp = await client.get(url, headers: {
       'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-    });
+    }).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) throw Exception('tiktok http ${resp.statusCode}');
     final html = resp.body;
     final found = <Repost>[];
     final regex = RegExp(r'"id":\s*"(\d+)".*?"isRepost":\s*true', dotAll: true);
@@ -55,16 +56,9 @@ class Remover {
             'Referer': 'https://www.tiktok.com/',
             'Cookie': 'sessionid=${Config.sessionId}',
           },
-        );
-        if (r.statusCode == 200) {
-          debugPrint('removed ${item.id}');
-          removed++;
-        } else {
-          debugPrint('failed ${item.id}: ${r.statusCode}');
-        }
-      } catch (e) {
-        debugPrint('error ${item.id}: $e');
-      }
+        ).timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) removed++;
+      } catch (_) {}
       await Future.delayed(Duration(seconds: delay.toInt()));
     }
     return removed;
@@ -101,22 +95,28 @@ class _HomePageState extends State<HomePage> {
   final _remover = Remover();
   List<Repost> _reposts = [];
   bool _loading = false;
-  String _status = '';
+  String _status = 'idle';
+  String? _error;
 
   Future<void> _scan() async {
-    setState(() { _loading = true; _status = ''; });
+    setState(() { _loading = true; _status = 'scanning...'; _error = null; });
     try {
       _reposts = await _scraper.getReposts(_user.text.trim());
-      setState(() => _status = 'found ${_reposts.length} reposts');
+      setState(() {
+        _loading = false;
+        _status = 'found ${_reposts.length} reposts';
+        _error = null;
+      });
     } catch (e) {
-      setState(() => _status = 'error: $e');
-    } finally {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
     }
   }
 
   Future<void> _remove() async {
-    setState(() { _loading = true; });
+    setState(() { _loading = true; _status = 'removing...'; });
     final n = await _remover.remove(_reposts, delay: Config.delay);
     setState(() {
       _loading = false;
@@ -137,7 +137,11 @@ class _HomePageState extends State<HomePage> {
             ElevatedButton(onPressed: _loading ? null : _scan, child: const Text('Scan')),
             if (_status.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(_status),
+              Text(_status, style: const TextStyle(color: Colors.green)),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
             ],
             if (_reposts.isNotEmpty) ...[
               const SizedBox(height: 16),
